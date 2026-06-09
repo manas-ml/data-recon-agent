@@ -149,7 +149,7 @@ uvicorn app.main:app --reload
 Then open <http://localhost:8000>. The UI loads tables from
 `main.recon_demo`; run `notebooks/01_setup_tables.py` first so they exist.
 
-> The agent uses the Claude model `claude-sonnet-4-20250514` (set in
+> The agent uses the Claude model `claude-sonnet-4-6` (set in
 > `app/config.py` → `anthropic_model`). Override with the `ANTHROPIC_MODEL`
 > environment variable.
 

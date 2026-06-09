@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # --- Anthropic / Claude ---------------------------------------------------
     anthropic_api_key: str = ""
-    # The agent brain. Explicitly pinned per the demo specification.
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    # The agent brain. Override with the ANTHROPIC_MODEL env var.
+    anthropic_model: str = "claude-sonnet-4-6"
 
     # --- Databricks -----------------------------------------------------------
     # Auto-detected by the Databricks SDK inside Databricks Apps. Left blank by
