@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<!--
+  Agentic Data Reconciliation — single-page UI.
+  Pure HTML/CSS/JS, no build step. Served by FastAPI; talks to /api/* and
+  consumes the agent's Server-Sent-Events stream.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agentic Data Reconciliation · Claude × Databricks</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot claude"></span>
+        <span class="brand-dot databricks"></span>
+        <span class="brand-name">Recon<strong>Agent</strong></span>
+        <span class="brand-sub">Claude × Databricks</span>
+      </div>
+      <div class="topbar-right">
+        <span id="workspace-url" class="workspace">workspace: —</span>
+        <span class="status-pill" id="status-pill">
+          <span class="pulse"></span><span id="status-text">idle</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Trigger bar -->
+    <section class="trigger">
+      <div class="field">
+        <label>Source table</label>
+        <select id="source-table"></select>
+      </div>
+      <div class="field">
+        <label>Target table</label>
+        <select id="target-table"></select>
+      </div>
+      <div class="field">
+        <label>Key columns</label>
+        <input id="key-columns" type="text" value="order_id" placeholder="comma,separated" />
+      </div>
+      <div class="field small">
+        <label>Tolerance %</label>
+        <input id="tolerance" type="number" value="2.0" step="0.1" min="0" />
+      </div>
+      <div class="field small">
+        <label>Trigger mode</label>
+        <select id="trigger-mode">
+          <option value="on_demand">on_demand</option>
+          <option value="scheduled">scheduled</option>
+        </select>
+      </div>
+      <button id="run-btn" class="run-btn">▶ Run Agent</button>
+    </section>
+
+    <!-- Main layout -->
+    <div class="layout">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <nav class="nav">
+          <div class="nav-item active">⊟ Reconciliation</div>
+          <div class="nav-item">⊞ Pipelines</div>
+          <div class="nav-item">◷ Audit Log</div>
+        </nav>
+        <div class="recent">
+          <div class="recent-title">Recent runs</div>
+          <ul id="recent-runs" class="recent-list"></ul>
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main class="main">
+        <!-- Left: reasoning feed -->
+        <section class="pane feed-pane">
+          <div class="pane-header">
+            <span>Agent Reasoning Feed</span>
+            <span id="typing" class="typing hidden">
+              <span></span><span></span><span></span>
+            </span>
+          </div>
+          <div id="feed" class="feed"></div>
+        </section>
+
+        <!-- Right: pipeline + metrics + verdict -->
+        <section class="pane right-pane">
+          <div class="pane-header">Agent Pipeline</div>
+          <div class="pipeline" id="pipeline">
+            <div class="step" data-step="1"><span class="step-icon">1</span><span class="step-label">Ingestion</span></div>
+            <div class="step" data-step="2"><span class="step-icon">2</span><span class="step-label">Profiling</span></div>
+            <div class="step" data-step="3"><span class="step-icon">3</span><span class="step-label">Reconciliation</span></div>
+            <div class="step" data-step="4"><span class="step-icon">4</span><span class="step-label">Remediation</span></div>
+            <div class="step" data-step="5"><span class="step-icon">5</span><span class="step-label">Reporting</span></div>
+          </div>
+
+          <div class="metrics" id="metrics">
+            <div class="metric-card">
+              <div class="metric-label">Row match %</div>
+              <div class="metric-value" id="m-row-match">—</div>
+              <div class="bar"><div class="bar-fill" id="bar-row-match"></div></div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Worst null rate</div>
+              <div class="metric-value" id="m-null-rate">—</div>
+              <div class="bar"><div class="bar-fill" id="bar-null-rate"></div></div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Value mismatches</div>
+              <div class="metric-value" id="m-mismatches">—</div>
+              <div class="bar"><div class="bar-fill" id="bar-mismatches"></div></div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Source-only rows</div>
+              <div class="metric-value" id="m-source-only">—</div>
+              <div class="bar"><div class="bar-fill" id="bar-source-only"></div></div>
+            </div>
+          </div>
+
+          <div class="verdict" id="verdict">
+            <div class="verdict-label">Decision verdict</div>
+            <div class="verdict-body" id="verdict-body">Awaiting run…</div>
+            <div class="verdict-actions hidden" id="verdict-actions">
+              <button class="approve" id="approve-btn">Approve</button>
+              <button class="reject" id="reject-btn">Reject</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
