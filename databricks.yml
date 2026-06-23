@@ -3,7 +3,7 @@
 # Defines:
 #   - The Databricks App resource (./app) hosting the FastAPI + Claude agent.
 #   - One job per reconciliation notebook (profiler, differ, backfill, verifier),
-#     each on a single-node DBR 14.3 LTS ML cluster.
+#     each using serverless compute.
 #
 # Deploy with:  databricks bundle deploy -t dev
 bundle:
@@ -16,12 +16,7 @@ variables:
   schema:
     description: Schema holding the demo tables.
     default: recon_demo
-  node_type_id:
-    description: Cluster node type for the notebook jobs.
-    default: i3.xlarge
 
-# Common cluster + tags reused by every job below.
-# Anchors keep the single-node DBR 14.3 LTS ML definition in one place.
 targets:
   dev:
     default: true
@@ -39,7 +34,18 @@ resources:
     recon-agent:
       name: recon-agent
       description: "Agentic Data Reconciliation powered by Claude AI"
-      source_code_path: ./app
+      source_code_path: .
+      resources:
+        - name: anthropic-api-key
+          secret:
+            scope: recon-agent
+            key: anthropic-api-key
+            permission: READ
+        - name: warehouse-id
+          secret:
+            scope: recon-agent
+            key: warehouse-id
+            permission: READ
 
   jobs:
     recon_profiler:
@@ -51,15 +57,6 @@ resources:
         - task_key: profiler
           notebook_task:
             notebook_path: ./notebooks/02_profiler.py
-          new_cluster:
-            spark_version: 14.3.x-cpu-ml-scala2.12
-            node_type_id: ${var.node_type_id}
-            num_workers: 0
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: "local[*]"
-            custom_tags:
-              ResourceClass: SingleNode
 
     recon_differ:
       name: "[recon-agent] Full Outer Join Differ"
@@ -70,15 +67,6 @@ resources:
         - task_key: differ
           notebook_task:
             notebook_path: ./notebooks/03_differ.py
-          new_cluster:
-            spark_version: 14.3.x-cpu-ml-scala2.12
-            node_type_id: ${var.node_type_id}
-            num_workers: 0
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: "local[*]"
-            custom_tags:
-              ResourceClass: SingleNode
 
     recon_backfill:
       name: "[recon-agent] Partition Backfill"
@@ -89,15 +77,6 @@ resources:
         - task_key: backfill
           notebook_task:
             notebook_path: ./notebooks/04_backfill.py
-          new_cluster:
-            spark_version: 14.3.x-cpu-ml-scala2.12
-            node_type_id: ${var.node_type_id}
-            num_workers: 0
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: "local[*]"
-            custom_tags:
-              ResourceClass: SingleNode
 
     recon_verifier:
       name: "[recon-agent] Post-Remediation Verifier"
@@ -108,12 +87,3 @@ resources:
         - task_key: verifier
           notebook_task:
             notebook_path: ./notebooks/05_verifier.py
-          new_cluster:
-            spark_version: 14.3.x-cpu-ml-scala2.12
-            node_type_id: ${var.node_type_id}
-            num_workers: 0
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: "local[*]"
-            custom_tags:
-              ResourceClass: SingleNode

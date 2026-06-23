@@ -12,6 +12,7 @@ schemas to Claude and dispatches tool_use blocks here.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, Optional
 
@@ -57,9 +58,19 @@ class ReconTools:
         server_hostname = host.replace("https://", "").replace("http://", "").rstrip("/")
         http_path = f"/sql/1.0/warehouses/{self.settings.databricks_warehouse_id}"
 
-        # Prefer an explicit token if present; otherwise use the SDK credential
-        # provider so Databricks Apps native auth is honoured.
-        token = self.settings.databricks_token or wc.config.token
+        # Resolve a Bearer token from the SDK credential chain.
+        # wc.config.authenticate() uses requests.PreparedRequest as its visitor
+        # interface, which is the standard way to extract a token from the SDK
+        # regardless of auth type (PAT, M2M OAuth, Databricks Apps OAuth).
+        if self.settings.databricks_token:
+            token = self.settings.databricks_token
+        else:
+            headers = wc.config.authenticate()
+            auth_header = headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                raise RuntimeError("SDK credential chain did not return a Bearer token")
+            token = auth_header[len("Bearer "):]
+
         return dbsql.connect(
             server_hostname=server_hostname,
             http_path=http_path,
@@ -155,7 +166,7 @@ class ReconTools:
                   COUNT(DISTINCT `{col}`)              AS distinct_count,
                   CAST(MIN(`{col}`) AS STRING)         AS min_val,
                   CAST(MAX(`{col}`) AS STRING)         AS max_val,
-                  CAST(TRY_AVG(`{col}`) AS STRING)     AS avg_val
+                  CAST(AVG(TRY_CAST(`{col}` AS DOUBLE)) AS STRING) AS avg_val
                 FROM {table}
                 """
             )[0]
@@ -283,11 +294,22 @@ class ReconTools:
         parameters, and polls run status every 5 seconds.
         """
         wc = self.workspace
-        job_id = None
+        # Fuzzy match: score each job by how many significant query words (>3
+        # chars) appear in its name, return the highest-scoring job.
+        # Handles DAB dev-mode prefixes like "[dev user] [recon-agent] Verifier"
+        # and tolerates extra words Claude adds (e.g. "orders_warehouse_backfill"
+        # still resolves to the Partition Backfill job via "backfill").
+        def _words(s: str) -> set[str]:
+            return set(re.sub(r"[^a-z0-9]+", " ", s.lower()).split())
+
+        sig_words = {w for w in _words(job_name) if len(w) > 3}
+        best_id, best_score = None, 0
         for job in wc.jobs.list():
-            if job.settings and job.settings.name == job_name:
-                job_id = job.job_id
-                break
+            if job.settings and job.settings.name:
+                score = len(sig_words & _words(job.settings.name))
+                if score > best_score:
+                    best_score, best_id = score, job.job_id
+        job_id = best_id if best_score > 0 else None
         if job_id is None:
             return {
                 "run_id": None,

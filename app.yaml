@@ -15,16 +15,8 @@ command:
   - "8000"
 
 env:
-  # Anthropic API key, sourced from the Databricks secret scope "recon-agent".
   - name: ANTHROPIC_API_KEY
-    valueFrom:
-      secret:
-        scope: recon-agent
-        key: anthropic-api-key
+    valueFrom: anthropic-api-key
 
-  # SQL Warehouse used for all Databricks SQL connector calls.
   - name: DATABRICKS_WAREHOUSE_ID
-    valueFrom:
-      secret:
-        scope: recon-agent
-        key: warehouse-id
+    valueFrom: warehouse-id
