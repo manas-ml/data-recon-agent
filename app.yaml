@@ -1,0 +1,22 @@
+# Databricks App manifest for the Agentic Data Reconciliation demo.
+#
+# This file is read by Databricks Apps at deploy time. The `command` block is
+# the process Databricks Apps launches; the `env` block wires Databricks secrets
+# into the process environment so no tokens are ever hardcoded in source.
+name: recon-agent
+description: "Agentic Data Reconciliation powered by Claude AI"
+
+command:
+  - uvicorn
+  - app.main:app
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+
+env:
+  - name: ANTHROPIC_API_KEY
+    valueFrom: anthropic-api-key
+
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: warehouse-id
