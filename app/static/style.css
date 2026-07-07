@@ -297,6 +297,72 @@ body {
   justify-content: space-between;
 }
 
+/* ---------- Alternate views (Audit Log) ---------- */
+.view-full {
+  flex: 1;
+  display: flex;
+  padding: 14px;
+  overflow: hidden;
+}
+.view-full .pane {
+  flex: 1;
+}
+.scroll-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+.refresh-link {
+  cursor: pointer;
+  color: var(--claude);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.refresh-link:hover {
+  text-decoration: underline;
+}
+.empty {
+  color: var(--sub);
+  font-size: 13px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* Audit table */
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.audit-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--sub);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+.audit-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: "IBM Plex Mono", monospace;
+}
+.audit-table tbody tr {
+  cursor: pointer;
+}
+.audit-table tbody tr:hover td {
+  background: var(--surface2);
+}
+.audit-table .mono-id {
+  color: var(--sub);
+}
+
 /* Feed */
 .feed {
   flex: 1;

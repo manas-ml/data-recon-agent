@@ -143,23 +143,6 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "write_recon_log",
-        "description": (
-            "Write the structured reconciliation result to the Delta audit log "
-            "table (creates the table if needed)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "object",
-                    "description": "The reconciliation result document.",
-                }
-            },
-            "required": ["result"],
-        },
-    },
-    {
         "name": "get_baseline_metrics",
         "description": (
             "Read the last N days of MLflow runs for a table to establish baseline "
@@ -195,7 +178,8 @@ Decision rules:
 
 You have access to these tools: compare_schemas, get_row_counts, run_column_profiler,
 run_full_diff, investigate_nulls, trigger_databricks_job, log_to_mlflow,
-write_recon_log, get_baseline_metrics.
+get_baseline_metrics. The final audit record is persisted automatically by the
+application after your run — you do not need to write it yourself.
 
 When you have reached a final conclusion, respond with plain text (no tool calls)
 that begins with a line "DECISION: <OUTCOME>" where <OUTCOME> is exactly one of
@@ -215,7 +199,6 @@ _TOOL_TO_AGENT = {
     "run_full_diff": "Reconciliation Agent",
     "trigger_databricks_job": "Remediation Agent",
     "log_to_mlflow": "Reporting Agent",
-    "write_recon_log": "Reporting Agent",
 }
 
 

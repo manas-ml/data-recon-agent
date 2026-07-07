@@ -411,6 +411,94 @@ async function replayRun(runId) {
 }
 
 // ----------------------------------------------------------------------- //
+// View switching (Reconciliation / Audit Log)
+// ----------------------------------------------------------------------- //
+const VIEWS = ["reconciliation", "audit"];
+
+function switchView(view) {
+  VIEWS.forEach((v) => {
+    const el = $("view-" + v);
+    if (el) el.classList.toggle("hidden", v !== view);
+  });
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.view === view);
+  });
+  // Load lazily each time the tab is opened so data stays fresh.
+  if (view === "audit") loadAudit();
+}
+
+function shortTable(t) {
+  if (!t) return "—";
+  const parts = String(t).split(".");
+  return parts[parts.length - 1];
+}
+
+// ----------------------------------------------------------------------- //
+// Audit Log — reads the recon_audit_log Delta table via /api/runs
+// ----------------------------------------------------------------------- //
+async function loadAudit() {
+  const body = $("audit-body");
+  body.innerHTML = `<div class="empty">Loading audit log…</div>`;
+  try {
+    const res = await fetch("/api/runs?limit=100");
+    const data = await res.json();
+    const runs = data.runs || [];
+    if (!runs.length) {
+      const why = data.error
+        ? `Could not read the audit log: ${escapeHtml(data.error)}`
+        : "No runs recorded yet — run the agent to populate recon_audit_log.";
+      body.innerHTML = `<div class="empty">${why}</div>`;
+      return;
+    }
+    const cols = [
+      ["logged_at", "When"],
+      ["run_id", "Run"],
+      ["outcome", "Outcome"],
+      ["source_table", "Source"],
+      ["target_table", "Target"],
+      ["issues_found", "Found"],
+      ["issues_resolved", "Resolved"],
+      ["duration_seconds", "Duration"],
+    ];
+    let html =
+      '<table class="audit-table"><thead><tr>' +
+      cols.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("") +
+      "</tr></thead><tbody>";
+    runs.forEach((r) => {
+      html +=
+        "<tr>" +
+        cols
+          .map(([key]) => {
+            const v = r[key];
+            if (key === "run_id")
+              return `<td class="mono-id">${escapeHtml(String(v || "").slice(0, 8))}</td>`;
+            if (key === "outcome")
+              return `<td><span class="tag ${escapeHtml(v || "")}">${escapeHtml(v || "—")}</span></td>`;
+            if (key === "source_table" || key === "target_table")
+              return `<td>${escapeHtml(shortTable(v))}</td>`;
+            if (key === "duration_seconds")
+              return `<td>${v != null ? escapeHtml(Number(v).toFixed(1)) + "s" : "—"}</td>`;
+            return `<td>${escapeHtml(v == null ? "—" : String(v))}</td>`;
+          })
+          .join("") +
+        "</tr>";
+    });
+    html += "</tbody></table>";
+    body.innerHTML = html;
+    // Click a row to replay that run in the Reconciliation view.
+    body.querySelectorAll("tbody tr").forEach((tr, i) => {
+      tr.onclick = () => {
+        switchView("reconciliation");
+        replayRun(runs[i].run_id);
+      };
+    });
+  } catch (e) {
+    body.innerHTML = `<div class="empty">Failed to load audit log.</div>`;
+    console.error(e);
+  }
+}
+
+// ----------------------------------------------------------------------- //
 // UI helpers
 // ----------------------------------------------------------------------- //
 function resetUI() {
@@ -453,4 +541,8 @@ window.addEventListener("DOMContentLoaded", () => {
   $("run-btn").addEventListener("click", runAgent);
   $("approve-btn").addEventListener("click", () => submitApproval("approve"));
   $("reject-btn").addEventListener("click", () => submitApproval("reject"));
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.addEventListener("click", () => switchView(el.dataset.view));
+  });
+  $("refresh-audit").addEventListener("click", loadAudit);
 });

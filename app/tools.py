@@ -485,13 +485,13 @@ class ReconTools:
             "investigate_nulls": self.investigate_nulls,
             "trigger_databricks_job": self.trigger_databricks_job,
             "log_to_mlflow": self.log_to_mlflow,
-            "write_recon_log": self.write_recon_log,
             "get_baseline_metrics": self.get_baseline_metrics,
         }.get(name)
         if handler is None:
             return {"error": f"Unknown tool: {name}"}
         result = handler(**arguments)
-        # log_to_mlflow / write_recon_log return bool; normalise to dict.
+        # write_recon_log is not dispatched here — it is called by the app
+        # server-side after each run. log_to_mlflow returns bool; normalise it.
         if isinstance(result, bool):
             return {"success": result}
         return result

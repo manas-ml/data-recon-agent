@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from pathlib import Path
 from typing import AsyncGenerator
@@ -64,16 +65,69 @@ async def _execute_run(run_id: str) -> None:
     """Background task: drive the agent and push events into the run's queue."""
     state = RUNS[run_id]
     agent = ReconciliationAgent(settings)
+    started = time.monotonic()
+    # Issue counts derived from each run_full_diff the agent runs, in order:
+    # (source_only + target_only + value_mismatch).
+    diff_totals: list[int] = []
     try:
         async for event in agent.run(state.request):
             state.events.append(event)
             if event.event_type == "decision" and event.data:
                 state.outcome = event.data.get("outcome")
+            elif (
+                event.event_type == "tool_result"
+                and event.data
+                and event.data.get("tool") == "run_full_diff"
+                and isinstance(event.data.get("result"), dict)
+            ):
+                r = event.data["result"]
+                diff_totals.append(
+                    int(r.get("source_only", 0) or 0)
+                    + int(r.get("target_only", 0) or 0)
+                    + int(r.get("value_mismatch", 0) or 0)
+                )
             await state.queue.put(event)
     finally:
+        # Authoritatively persist the audit record server-side. The agent no
+        # longer writes it — the LLM lacked the finalized outcome, a clock, and
+        # the real run_id — so outcome/duration/counts are computed here.
+        await _persist_audit(run_id, state, diff_totals, round(time.monotonic() - started, 2))
         state.done = True
         # Sentinel signals the SSE generator to close.
         await state.queue.put(None)
+
+
+async def _persist_audit(
+    run_id: str, state: RunState, diff_totals: list[int], duration: float
+) -> None:
+    """Write the definitive run result to recon_audit_log (best-effort)."""
+    issues_found = diff_totals[0] if diff_totals else 0
+    if len(diff_totals) >= 2:
+        # A re-diff ran after remediation: resolved = how much the count dropped.
+        issues_resolved = max(0, diff_totals[0] - diff_totals[-1])
+    elif state.outcome == "REMEDIATED":
+        issues_resolved = issues_found
+    else:
+        issues_resolved = 0
+
+    result = {
+        "run_id": run_id,
+        "outcome": state.outcome or "ESCALATED",
+        "issues_found": issues_found,
+        "issues_resolved": issues_resolved,
+        "duration_seconds": duration,
+        "source_table": state.request.source_table,
+        "target_table": state.request.target_table,
+        "trigger_mode": state.request.trigger_mode,
+        "key_columns": state.request.key_columns,
+        "diff_totals": diff_totals,
+    }
+    try:
+        tools = ReconTools(settings)
+        await asyncio.to_thread(tools.write_recon_log, result)
+    except Exception as exc:  # noqa: BLE001
+        # An audit-write failure must never crash the run.
+        print(f"[audit] failed to persist run {run_id}: {exc}")
 
 
 # --------------------------------------------------------------------------- #
@@ -163,8 +217,12 @@ async def stream_run(run_id: str) -> EventSourceResponse:
 
 
 @app.get("/api/runs")
-async def list_runs() -> JSONResponse:
-    """List the last 20 runs from the recon_audit_log Delta table."""
+async def list_runs(limit: int = 20) -> JSONResponse:
+    """List recent runs from the recon_audit_log Delta table.
+
+    The sidebar uses the default (20); the Audit Log view requests more.
+    """
+    limit = max(1, min(limit, 500))
     try:
         tools = ReconTools(settings)
         rows = await asyncio.to_thread(
@@ -175,7 +233,7 @@ async def list_runs() -> JSONResponse:
                    CAST(logged_at AS STRING) AS logged_at
             FROM {settings.fq_audit_table}
             ORDER BY logged_at DESC
-            LIMIT 20
+            LIMIT {limit}
             """,
         )
         return JSONResponse({"runs": rows})
