@@ -114,6 +114,17 @@ The `AgentEvent.event_type` field drives frontend rendering:
 | `decision` | Terminal `DECISION:` line extracted from Claude output |
 | `error` | Unhandled exception in the loop |
 | `complete` | Loop ended with no tool calls (fallback) |
+| `approval_required` | Agent paused before a gated tool; `data` carries the proposed `tool`+`input` |
+| `approval_resolved` | Human decided; `data.decision` is `approve`/`reject` |
+
+## Human-in-the-loop approval gate
+
+Remediation is data-mutating, so `trigger_databricks_job` (the only tool in `_GATED_TOOLS` in `app/agent.py`) can be gated on human approval:
+
+- `ReconciliationAgent.run(request, approval_hook=...)` yields an `approval_required` event, then `await`s the injected `approval_hook` before dispatching the tool. The event is yielded **before** the await so the SSE stream delivers the prompt before the agent parks.
+- `_execute_run` in `app/main.py` supplies the hook, which blocks on `RunState.approval_event` (with an optional `approval_timeout_seconds` auto-reject). `POST /api/run/{run_id}/approve` sets `approval_decision` + fires the Event (`mode: gate_resolved`); with no gate pending it falls back to the legacy post-run relabel (`mode: post_run_relabel`).
+- **Reject** feeds a synthetic "declined by operator" result back to Claude so it emits `DECISION: FLAGGED`/`ESCALATED` (recorded normally by `_persist_audit`). The gate never sets `outcome` directly.
+- Enabled per-run via the `require_approval` field on `RunRequest` (UI checkbox, default on), globally gated by the `REQUIRE_APPROVAL_DEFAULT` setting. Ungated when no `approval_hook` is passed (backward compatible). The frontend renders the `#approval` panel and resends the decision to the same `/approve` endpoint; the panel is reconstructable on SSE reconnect because `approval_required`/`approval_resolved` are replayed from `state.events`.
 
 ## Credential detection in tools.py
 
@@ -147,3 +158,5 @@ All settings come from environment variables (or `.env` locally). Key overrides:
 | `SCHEMA_NAME` | `recon_demo` | Schema holding demo tables |
 | `MAX_AGENT_ITERATIONS` | `10` | Loop guard before forced escalation |
 | `MLFLOW_EXPERIMENT` | `/Shared/recon-agent` | MLflow experiment path |
+| `REQUIRE_APPROVAL_DEFAULT` | `true` | Global kill-switch for the remediation approval gate (see HITL section) |
+| `APPROVAL_TIMEOUT_SECONDS` | `0` | Seconds to wait for human approval before auto-rejecting; `0` = wait forever |

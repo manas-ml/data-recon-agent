@@ -59,6 +59,10 @@
           <option value="scheduled">scheduled</option>
         </select>
       </div>
+      <label class="field checkbox-field" for="require-approval">
+        <input id="require-approval" type="checkbox" checked />
+        <span>Require approval before remediation</span>
+      </label>
       <button id="run-btn" class="run-btn">▶ Run Agent</button>
     </section>
 
@@ -120,6 +124,16 @@
               <div class="metric-label">Source-only rows</div>
               <div class="metric-value" id="m-source-only">—</div>
               <div class="bar"><div class="bar-fill" id="bar-source-only"></div></div>
+            </div>
+          </div>
+
+          <div class="approval hidden" id="approval">
+            <div class="approval-label">⏸ Approval required</div>
+            <div class="approval-body" id="approval-body"></div>
+            <pre id="approval-params"></pre>
+            <div class="approval-actions">
+              <button class="approve" id="gate-approve-btn">Approve &amp; run</button>
+              <button class="reject" id="gate-reject-btn">Reject</button>
             </div>
           </div>
 

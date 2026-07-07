@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     # --- Agent loop -----------------------------------------------------------
     max_agent_iterations: int = 10
 
+    # --- Human-in-the-loop ----------------------------------------------------
+    # Global kill-switch for the remediation approval gate. When False, runs are
+    # never gated regardless of the per-run require_approval flag (useful for
+    # headless/automated runs). Set REQUIRE_APPROVAL_DEFAULT=false to disable.
+    require_approval_default: bool = True
+    # Seconds to wait for a human decision before auto-rejecting (escalate).
+    # 0 = wait indefinitely.
+    approval_timeout_seconds: int = 0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

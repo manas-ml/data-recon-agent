@@ -87,6 +87,7 @@ async function runAgent() {
       .filter(Boolean),
     tolerance_pct: parseFloat($("tolerance").value) || 2.0,
     trigger_mode: $("trigger-mode").value,
+    require_approval: $("require-approval").checked,
   };
 
   try {
@@ -124,6 +125,7 @@ function openStream(runId) {
       $("run-btn").disabled = false;
       $("typing").classList.add("hidden");
       setStatus("idle", "idle");
+      hideApproval();
       markRemainingStepsDone();
       refreshRecentRuns();
     }
@@ -185,6 +187,15 @@ function renderEvent(event) {
   if (event.event_type === "decision") {
     const outcome = (event.data && event.data.outcome) || "FLAGGED";
     showVerdict(outcome, event.message);
+  }
+
+  // HITL gate: the agent paused before a data-mutating tool.
+  if (event.event_type === "approval_required") {
+    showApproval(event.data || {});
+  }
+  // Gate resolved (approve/reject, or replay of a resolved gate).
+  if (event.event_type === "approval_resolved") {
+    hideApproval();
   }
 
   $("feed").appendChild(item);
@@ -372,6 +383,39 @@ async function submitApproval(decision) {
 }
 
 // ----------------------------------------------------------------------- //
+// Human-in-the-loop approval gate
+// ----------------------------------------------------------------------- //
+// Reveal the approval prompt for a proposed data-mutating action. Idempotent
+// and order-driven so it also works when events are replayed on reconnect: a
+// trailing approval_resolved event hides an already-resolved gate.
+function showApproval(data) {
+  const tool = (data && data.tool) || "remediation";
+  $("approval-body").textContent = `The agent wants to run "${tool}". Approve to execute it, or reject to decline.`;
+  $("approval-params").textContent = JSON.stringify((data && data.input) || {}, null, 2);
+  $("approval").classList.remove("hidden");
+  setStatus("live", "awaiting approval");
+}
+
+function hideApproval() {
+  $("approval").classList.add("hidden");
+}
+
+async function submitGateDecision(decision) {
+  if (!currentRunId) return;
+  hideApproval(); // snappy feedback; approval_resolved will also hide it
+  try {
+    await fetch(`/api/run/${currentRunId}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    // The verdict arrives later via the agent's `decision` event after resume.
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ----------------------------------------------------------------------- //
 // Recent runs
 // ----------------------------------------------------------------------- //
 async function refreshRecentRuns() {
@@ -506,6 +550,7 @@ function resetUI() {
   $("verdict").className = "verdict";
   $("verdict-body").textContent = "Awaiting run…";
   $("verdict-actions").classList.add("hidden");
+  hideApproval();
   ["row-match", "null-rate", "mismatches", "source-only"].forEach((k) => {
     $("m-" + k).textContent = "—";
     const bar = $("bar-" + k);
@@ -541,6 +586,8 @@ window.addEventListener("DOMContentLoaded", () => {
   $("run-btn").addEventListener("click", runAgent);
   $("approve-btn").addEventListener("click", () => submitApproval("approve"));
   $("reject-btn").addEventListener("click", () => submitApproval("reject"));
+  $("gate-approve-btn").addEventListener("click", () => submitGateDecision("approve"));
+  $("gate-reject-btn").addEventListener("click", () => submitGateDecision("reject"));
   document.querySelectorAll(".nav-item").forEach((el) => {
     el.addEventListener("click", () => switchView(el.dataset.view));
   });

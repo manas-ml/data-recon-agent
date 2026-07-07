@@ -23,13 +23,24 @@ class RunRequest(BaseModel):
     trigger_mode: str = Field(
         "on_demand", description="How the run was triggered (on_demand, scheduled, ...)."
     )
+    require_approval: bool = Field(
+        True,
+        description="Gate the remediation job (trigger_databricks_job) on human approval.",
+    )
 
 
 class AgentEvent(BaseModel):
     """A single streamed event from the agent loop, rendered live in the UI."""
 
     event_type: Literal[
-        "thinking", "tool_call", "tool_result", "decision", "error", "complete"
+        "thinking",
+        "tool_call",
+        "tool_result",
+        "decision",
+        "error",
+        "complete",
+        "approval_required",
+        "approval_resolved",
     ]
     agent_name: str
     message: str

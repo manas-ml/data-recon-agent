@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 import anthropic
 
@@ -201,6 +201,10 @@ _TOOL_TO_AGENT = {
     "log_to_mlflow": "Reporting Agent",
 }
 
+# Tools that mutate data and therefore require human approval before executing
+# (when the run is gated). Only the remediation job qualifies.
+_GATED_TOOLS = {"trigger_databricks_job"}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -214,8 +218,18 @@ class ReconciliationAgent:
         self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         self.tools = ReconTools(settings)
 
-    async def run(self, request: RunRequest) -> AsyncGenerator[AgentEvent, None]:
-        """Run the agentic loop, yielding AgentEvent objects for SSE streaming."""
+    async def run(
+        self,
+        request: RunRequest,
+        approval_hook: Optional[Callable[[dict], Awaitable[str]]] = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Run the agentic loop, yielding AgentEvent objects for SSE streaming.
+
+        If ``approval_hook`` is provided and the run is gated, the agent pauses
+        before executing a data-mutating tool (see ``_GATED_TOOLS``) and awaits
+        the hook, which returns "approve" or "reject". When no hook is passed the
+        agent runs fully autonomously (backward compatible).
+        """
         step = 0
         run_context = json.dumps(request.model_dump())
         system = SYSTEM_PROMPT.format(run_context=run_context)
@@ -303,12 +317,64 @@ class ReconciliationAgent:
                         step=step,
                     )
 
-                    try:
-                        result = await asyncio.to_thread(
-                            self.tools.dispatch, tu.name, dict(tu.input)
+                    # --- Human-in-the-loop gate ------------------------------
+                    # Pause before a data-mutating tool and wait for approval.
+                    # The approval_required event is yielded FIRST so it reaches
+                    # the SSE stream before the generator suspends on the hook.
+                    gated = (
+                        approval_hook is not None
+                        and request.require_approval
+                        and self.settings.require_approval_default
+                        and tu.name in _GATED_TOOLS
+                    )
+                    decision = "approve"
+                    if gated:
+                        step += 1
+                        yield AgentEvent(
+                            event_type="approval_required",
+                            agent_name=agent_name,
+                            message=f"Human approval required before running {tu.name}.",
+                            data={
+                                "tool": tu.name,
+                                "input": tu.input,
+                                "tool_use_id": tu.id,
+                            },
+                            timestamp=_now(),
+                            step=step,
                         )
-                    except Exception as exc:  # noqa: BLE001
-                        result = {"error": str(exc)}
+                        decision = await approval_hook(
+                            {"tool": tu.name, "input": tu.input, "tool_use_id": tu.id}
+                        )
+                        step += 1
+                        yield AgentEvent(
+                            event_type="approval_resolved",
+                            agent_name=agent_name,
+                            message=f"Operator {decision}d {tu.name}.",
+                            data={"decision": decision, "tool": tu.name},
+                            timestamp=_now(),
+                            step=step,
+                        )
+
+                    if gated and decision == "reject":
+                        # Skip execution; steer Claude to a terminal decision.
+                        result = {
+                            "rejected_by_human": True,
+                            "message": (
+                                f"A human operator REJECTED the proposed {tu.name} "
+                                "action, so it was NOT executed. Do NOT retry it or "
+                                "call any remediation job. Conclude now with a line "
+                                "'DECISION: FLAGGED' (or 'DECISION: ESCALATED' if the "
+                                "issue is severe), explaining that remediation was "
+                                "declined by the operator and needs manual handling."
+                            ),
+                        }
+                    else:
+                        try:
+                            result = await asyncio.to_thread(
+                                self.tools.dispatch, tu.name, dict(tu.input)
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            result = {"error": str(exc)}
 
                     step += 1
                     yield AgentEvent(

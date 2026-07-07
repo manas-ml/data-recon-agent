@@ -55,6 +55,12 @@ class RunState:
         self.events: list[AgentEvent] = []
         self.done = False
         self.outcome: str | None = None
+        # Human-in-the-loop gate: the agent parks on this Event before a gated
+        # (data-mutating) tool; the /approve endpoint sets the decision + fires
+        # the Event to resume it.
+        self.approval_event: asyncio.Event = asyncio.Event()
+        self.pending_approval: dict | None = None  # descriptor shown to the human
+        self.approval_decision: str | None = None  # "approve" | "reject"
 
 
 # Keyed by run_id (UUID).
@@ -69,8 +75,32 @@ async def _execute_run(run_id: str) -> None:
     # Issue counts derived from each run_full_diff the agent runs, in order:
     # (source_only + target_only + value_mismatch).
     diff_totals: list[int] = []
+
+    async def approval_hook(descriptor: dict) -> str:
+        """Block until a human approves/rejects the proposed remediation.
+
+        Clears the Event here (not in /approve) so repeated gated calls in one
+        run can't reuse an already-set Event. Auto-rejects on timeout when
+        approval_timeout_seconds > 0 so an abandoned run escalates instead of
+        hanging forever.
+        """
+        state.pending_approval = descriptor
+        state.approval_decision = None
+        state.approval_event.clear()
+        try:
+            timeout = settings.approval_timeout_seconds
+            if timeout and timeout > 0:
+                await asyncio.wait_for(state.approval_event.wait(), timeout=timeout)
+            else:
+                await state.approval_event.wait()
+        except asyncio.TimeoutError:
+            state.approval_decision = "reject"
+        finally:
+            state.pending_approval = None
+        return state.approval_decision or "reject"
+
     try:
-        async for event in agent.run(state.request):
+        async for event in agent.run(state.request, approval_hook=approval_hook):
             state.events.append(event)
             if event.event_type == "decision" and event.data:
                 state.outcome = event.data.get("outcome")
@@ -272,11 +302,34 @@ async def get_run(run_id: str) -> JSONResponse:
 
 @app.post("/api/run/{run_id}/approve")
 async def approve_run(run_id: str, request: Request) -> JSONResponse:
-    """Record a human decision (approve/reject) for a FLAGGED run."""
+    """Handle a human approve/reject decision.
+
+    Two modes:
+    (a) gate_resolved — a remediation gate is actively pending: unblock the
+        agent so it runs (approve) or skips (reject) the job. The final outcome
+        comes from Claude's post-resume DECISION line, so we do not set it here.
+    (b) post_run_relabel — no gate pending (legacy path): relabel the finished
+        run's outcome directly.
+    """
     body = await request.json()
     decision = body.get("decision", "approve")
     if run_id not in RUNS:
         raise HTTPException(status_code=404, detail="run not found")
     state = RUNS[run_id]
+
+    if state.pending_approval is not None and not state.approval_event.is_set():
+        state.approval_decision = "approve" if decision == "approve" else "reject"
+        state.approval_event.set()
+        return JSONResponse(
+            {"run_id": run_id, "decision": decision, "mode": "gate_resolved"}
+        )
+
     state.outcome = "REMEDIATED" if decision == "approve" else "ESCALATED"
-    return JSONResponse({"run_id": run_id, "decision": decision, "outcome": state.outcome})
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "decision": decision,
+            "outcome": state.outcome,
+            "mode": "post_run_relabel",
+        }
+    )

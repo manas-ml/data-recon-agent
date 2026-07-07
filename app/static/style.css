@@ -636,6 +636,82 @@ body {
   color: #fff;
 }
 
+/* ---------- HITL approval gate ---------- */
+.approval {
+  margin: 0 16px 16px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--claude);
+  background: rgba(124, 111, 255, 0.1);
+  animation: approvalPulse 2s ease-in-out infinite;
+}
+@keyframes approvalPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 111, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.18);
+  }
+}
+.approval-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--claude);
+  margin-bottom: 8px;
+}
+.approval-body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.approval pre {
+  margin: 10px 0 0;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.approval-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.approval-actions button {
+  flex: 1;
+  padding: 9px;
+  border: none;
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Approval toggle in the trigger bar */
+.checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  max-width: 200px;
+  color: var(--sub);
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.checkbox-field input {
+  width: auto;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--claude);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 768px) {
   .layout {
